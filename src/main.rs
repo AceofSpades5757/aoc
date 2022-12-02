@@ -36,9 +36,6 @@ impl Environment {
         let day_dir: String = std::env::current_dir().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
         let year_dir: String = std::env::current_dir().unwrap().parent().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
 
-        println!("path: {:?}", year_dir);
-        println!("path: {:?}", day_dir);
-
         let day = 1;
         let year = 2;
 
@@ -79,7 +76,9 @@ fn main() {
     match args.action {
         Action::Input => {
             helpers::check_day_and_year_dirs(day_format, year_format);
+            let input = get_input(2022, 1);
             println!("Input");
+            std::fs::write("input.txt", input).expect("Unable to write file");
         },
         Action::Submit{input} => {
             helpers::check_day_and_year_dirs(day_format, year_format);
@@ -123,7 +122,28 @@ pub mod helpers {
     }
 }
 
-// tests
+fn get_input(year: i32, day: i32) -> String {
+    use std::env;
+    use dotenv::dotenv;
+
+    let url = format!("https://adventofcode.com/{}/day/{}/input", year, day);
+
+    let cwd = std::env::current_dir().unwrap();
+    env::set_current_dir("../.." ).unwrap();
+    dotenv().ok();
+    env::set_current_dir(cwd).unwrap();
+
+    let session_cookie = std::env::var("session").expect("session is set in .env file");
+    let client = reqwest::blocking::Client::new();
+    let response = client.get(&url)
+        .header("Cookie", format!("session={}", session_cookie))
+        .header("User-Agent", "AceofSpades5757")
+        .send()
+        .unwrap();
+    let text = response.text().unwrap();
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
