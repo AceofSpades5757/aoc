@@ -25,40 +25,61 @@ enum Action {
 }
 
 struct Environment {
-    day: u8,
+    day: Option<u8>,
     year: u16,
+}
+
+#[derive(Debug)]
+enum EnvironmentError {
+    InvalidYear,
+}
+
+#[derive(Debug)]
+enum Error {
+    EnvironmentError(EnvironmentError),
 }
 
 /// Constructors
 impl Environment {
-    fn new() -> Self {
-        // directory
-        let day_dir: String = std::env::current_dir().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
-        let year_dir: String = std::env::current_dir().unwrap().parent().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
+    fn new(day_format: &str, year_format: &str) -> Result<Self, Error> {
+        let day: Option<u8>;
+        let year: u16;
 
-        let day = 1;
-        let year = 2;
+        let current_dir: String = std::env::current_dir().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
+        let parent_dir: String = std::env::current_dir().unwrap().parent().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
 
-        Environment { day, year }
+        if parent_dir.contains(year_format) {
+            year = parent_dir.replace(year_format, "").parse().unwrap();
+            day = Some(current_dir.replace(day_format, "").parse().unwrap());
+        } else {
+            if !current_dir.contains(year_format) {
+                return Err(Error::EnvironmentError(EnvironmentError::InvalidYear));
+            } else {
+                year = current_dir.replace(year_format, "").parse().unwrap();
+                day = None
+            }
+        }
+
+        Ok(Environment { day, year })
     }
 }
 
 /// Validators
 impl Environment {
     fn check_day(day_format: &str) -> Result<(), String> {
-        let day_dir: String = std::env::current_dir().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
+        let current_dir: String = std::env::current_dir().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
 
-        if !day_dir.contains(day_format) {
-            Err(format!("Day directory not valid: {}", day_dir))
+        if !current_dir.contains(day_format) {
+            Err(format!("Current directory not valid, <{}>. Should look like <{}>", current_dir, day_format))
         } else {
             Ok(())
         }
     }
     fn check_year(year_format: &str) -> Result<(), String> {
-        let year_dir: String = std::env::current_dir().unwrap().parent().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
+        let parent_dir: String = std::env::current_dir().unwrap().parent().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
 
-        if !year_dir.contains(year_format) {
-            Err(format!("Year directory not valid: {}", year_dir))
+        if !parent_dir.contains(year_format) {
+            Err(format!("Parnet directory not valid: {}. Should look like <{}>", parent_dir, year_format))
         } else {
             Ok(())
         }
@@ -70,13 +91,20 @@ fn main() {
     let year_format = "advent-of-code-";
     let day_format = "day-";
 
-    let environ = Environment::new();
+    let environment: Environment;
+    match Environment::new(day_format, year_format) {
+        Ok(env) => environment = env,
+        Err(e) => {
+            eprintln!("Invalid environment: {:?}", e);
+            std::process::exit(1);
+        }
+    }
 
     let args = Args::parse();
     match args.action {
         Action::Input => {
             helpers::check_day_and_year_dirs(day_format, year_format);
-            let input = get_input(2022, 1);
+            let input = get_input(environment.year, environment.day.unwrap());
             println!("Input");
             std::fs::write("input.txt", input).expect("Unable to write file");
         },
@@ -85,7 +113,6 @@ fn main() {
             println!("Submit: {}", input);
         },
         Action::Day => {
-            helpers::check_year_dir(year_format);
             println!("Day");
         },
         Action::Part => {
@@ -122,7 +149,7 @@ pub mod helpers {
     }
 }
 
-fn get_input(year: i32, day: i32) -> String {
+fn get_input(year: u16, day: u8) -> String {
     use std::env;
     use dotenv::dotenv;
 
@@ -133,7 +160,14 @@ fn get_input(year: i32, day: i32) -> String {
     dotenv().ok();
     env::set_current_dir(cwd).unwrap();
 
-    let session_cookie = std::env::var("session").expect("session is set in .env file");
+    let session_cookie: String;
+    match env::var("session") {
+        Ok(val) => session_cookie = val,
+        Err(e) => {
+            eprintln!("session key not set in .env file: {}", e);
+            std::process::exit(1);
+        },
+    }
     let client = reqwest::blocking::Client::new();
     let response = client.get(&url)
         .header("Cookie", format!("session={}", session_cookie))
