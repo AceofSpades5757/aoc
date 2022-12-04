@@ -172,11 +172,9 @@ fn main() {
             let input = get_input(environment.year, environment.day.unwrap());
             let result = std::fs::write("input.txt", input);
             if result.is_ok() {
-                let msg = "Success".green();
-                println!("{}", msg);
+                println!("{}", "Success".green());
             } else {
-                let msg = format!("Failed to write input file: {:?}", result).red();
-                println!("{}", msg);
+                println!("{}", format!("Failed to write input file: {:?}", result).red());
             }
         }
         Action::Submit { input } => {
