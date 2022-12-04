@@ -104,6 +104,14 @@ impl Environment {
         }
     }
     fn check_year(year_format: &str) -> Result<(), String> {
+        let current_dir: String = std::env::current_dir()
+            .unwrap()
+            .to_owned()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
         let parent_dir: String = std::env::current_dir()
             .unwrap()
             .parent()
@@ -115,9 +123,9 @@ impl Environment {
             .unwrap()
             .to_owned();
 
-        if !parent_dir.contains(year_format) {
+        if !parent_dir.contains(year_format) && !current_dir.contains(year_format) {
             Err(format!(
-                "Parnet directory not valid: {}. Should look like <{}>",
+                "Parent directory not valid: {}. Should look like <{}>",
                 parent_dir, year_format
             ))
         } else {
@@ -159,7 +167,7 @@ fn main() {
     match Environment::new(&day_format, &year_format) {
         Ok(env) => environment = env,
         Err(e) => {
-            eprintln!("Invalid environment: {:?}", e);
+            eprintln!("{}", format!("Invalid environment: {:?}", e).red());
             std::process::exit(1);
         }
     }
@@ -168,6 +176,7 @@ fn main() {
     let args = Args::parse();
     match args.action {
         Action::Input => {
+            // Check CWD
             helpers::check_day_and_year_dirs(&day_format, &year_format);
             let input = get_input(environment.year, environment.day.unwrap());
             let result = std::fs::write("input.txt", input);
@@ -181,24 +190,106 @@ fn main() {
             }
         }
         Action::Submit { input } => {
+            // Check CWD
             helpers::check_day_and_year_dirs(&day_format, &year_format);
             println!("Submit: {}", input);
         }
         Action::Day => {
-            //
-            println!("Day");
+            // Check CWD
+            helpers::check_year_dir(&year_format);
+            // New Day Directory Name
+            let mut highest_day: u8 = 0;
+            for entry in std::fs::read_dir(".").unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                let path_str = path.file_name().unwrap().to_str().unwrap();
+                if path_str.contains(&day_format) {
+                    let day: u8 = path_str.replace(&day_format, "").parse().unwrap_or(0);
+                    if day > highest_day {
+                        highest_day = day;
+                    }
+                }
+            }
+            let new_day: u8 = highest_day + 1;
+            let new_day_str: String = format!("{}{:02}", day_format, new_day);
+            // Create new day directory
+            let result = std::fs::create_dir(&new_day_str);
+            if result.is_ok() {
+                println!("New Project Directory: {}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!("Failed to create new day directory: {:?}", result).red()
+                );
+            }
+            // copy template from ./templates/Cargo.toml
+            let template_cargo_toml = include_str!("../templates/Cargo.toml");
+            let template_cargo_toml = template_cargo_toml.replace(r#"name = """#, &format!(r#"name = "{}""#, &new_day_str));
+            let result = std::fs::write(format!("{}/Cargo.toml", new_day_str), template_cargo_toml);
+            if result.is_ok() {
+                println!("New Cargo.toml: {}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!("Failed to create new Cargo.toml: {:?}", result).red()
+                );
+            }
+            // mkdir for src
+            let result = std::fs::create_dir(format!("{}/src", new_day_str));
+            if result.is_ok() {
+                println!("New src Directory: {}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!("Failed to create new src directory: {:?}", result).red()
+                );
+            }
+            // mkdir for src/bin
+            let result = std::fs::create_dir(format!("{}/src/bin", new_day_str));
+            if result.is_ok() {
+                println!("New src/bin Directory: {}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!("Failed to create new src/bin directory: {:?}", result).red()
+                );
+            }
+            // copy template part 1 from ./templates/part1.rs to src/bin/part_1.rs
+            let template_part_1 = include_str!("../templates/part.rs");
+            let result = std::fs::write(format!("{}/src/bin/part_1.rs", new_day_str), template_part_1);
+            if result.is_ok() {
+                println!("New src/bin/part_1.rs: {}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!("Failed to create new src/bin/part_1.rs: {:?}", result).red()
+                );
+            }
         }
         Action::Part => {
+            // Check CWD
             helpers::check_day_and_year_dirs(&day_format, &year_format);
-            // Run: `cp src/part-1.rs src/part-2.rs`
+
+            // Check: is there already a src/bin/part_2.rs?
+            let part_2_path = "./src/bin/part_2.rs";
+            if std::path::Path::new(&part_2_path).exists() {
+                println!(
+                    "{}",
+                    format!("{} already exists.", part_2_path).red()
+                );
+                std::process::exit(1);
+            }
+
+            // Run: `cp src/bin/part_1.rs src/bin/part_2.rs`
             let child = std::process::Command::new("cp")
-                .arg(format!("src/part-1.rs"))
-                .arg(format!("src/part-2.rs"))
+                .arg(format!("src/bin/part_1.rs"))
+                .arg(format!("src/bin/part_2.rs"))
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::piped())
                 .spawn()
                 .expect("Run cp command");
             let output = child.wait_with_output().expect("cp command finished");
+
             if output.status.success() {
                 println!("{}", "Success".green());
             } else {
@@ -217,17 +308,18 @@ fn main() {
 
 pub mod helpers {
     use crate::Environment;
+    use colored::*;
 
     pub fn check_day_and_year_dirs(day_format: &str, year_format: &str) {
         // Verify user is in the correct directory.
         // 1. advent-of-code-{year}
         // 2. day-XX
         if let Err(err) = Environment::check_day(day_format) {
-            eprintln!("Error: {}", err);
+            eprintln!("{}", format!("Error: {}", err).red());
             std::process::exit(1);
         }
         if let Err(err) = Environment::check_year(year_format) {
-            eprintln!("Error: {}", err);
+            eprintln!("{}", format!("Error: {}", err).red());
             std::process::exit(1);
         }
     }
@@ -236,7 +328,7 @@ pub mod helpers {
         // Verify user is in the correct directory.
         // 1. advent-of-code-{year}
         if let Err(err) = Environment::check_year(year_format) {
-            eprintln!("Error: {}", err);
+            eprintln!("{}", format!("Error: {}", err).red());
             std::process::exit(1);
         }
     }
@@ -257,7 +349,7 @@ fn get_input(year: u16, day: u8) -> String {
     match env::var("session") {
         Ok(val) => session_cookie = val,
         Err(e) => {
-            eprintln!("session key not set in .env file: {}", e);
+            eprintln!("{}", format!("session key not set in .env file: {}", e).red());
             std::process::exit(1);
         }
     }
