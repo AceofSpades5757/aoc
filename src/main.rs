@@ -1,5 +1,7 @@
+use colored::*;
 use clap::Parser;
 use clap::Subcommand;
+use serde::{Deserialize, Serialize};
 
 /// Advent of Code command line tool to facilitate solving puzzles.
 #[derive(Parser)]
@@ -14,7 +16,7 @@ enum Action {
     /// Automatically retrieve input file, based on the current working directory's day: day-XX/input.txt
     Input,
     /// Submit answer, based on the current working directory's day.
-    Submit{
+    Submit {
         #[clap(short, long)]
         input: String,
     },
@@ -45,8 +47,24 @@ impl Environment {
         let day: Option<u8>;
         let year: u16;
 
-        let current_dir: String = std::env::current_dir().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
-        let parent_dir: String = std::env::current_dir().unwrap().parent().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
+        let current_dir: String = std::env::current_dir()
+            .unwrap()
+            .to_owned()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let parent_dir: String = std::env::current_dir()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_owned()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
 
         if parent_dir.contains(year_format) {
             year = parent_dir.replace(year_format, "").parse().unwrap();
@@ -67,32 +85,78 @@ impl Environment {
 /// Validators
 impl Environment {
     fn check_day(day_format: &str) -> Result<(), String> {
-        let current_dir: String = std::env::current_dir().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
+        let current_dir: String = std::env::current_dir()
+            .unwrap()
+            .to_owned()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
 
         if !current_dir.contains(day_format) {
-            Err(format!("Current directory not valid, <{}>. Should look like <{}>", current_dir, day_format))
+            Err(format!(
+                "Current directory not valid, <{}>. Should look like <{}>",
+                current_dir, day_format
+            ))
         } else {
             Ok(())
         }
     }
     fn check_year(year_format: &str) -> Result<(), String> {
-        let parent_dir: String = std::env::current_dir().unwrap().parent().unwrap().to_owned().file_name().unwrap().to_str().unwrap().to_owned();
+        let parent_dir: String = std::env::current_dir()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_owned()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
 
         if !parent_dir.contains(year_format) {
-            Err(format!("Parnet directory not valid: {}. Should look like <{}>", parent_dir, year_format))
+            Err(format!(
+                "Parnet directory not valid: {}. Should look like <{}>",
+                parent_dir, year_format
+            ))
         } else {
             Ok(())
         }
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct Formats {
+    day: Option<String>,
+    year: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    formats: Formats,
+}
+
 fn main() {
     // Config
-    let year_format = "advent-of-code-";
-    let day_format = "day-";
+    let config: Config = toml::from_str(include_str!("../config.toml")).unwrap();
 
+    let day_format: String;
+    let year_format: String;
+    if config.formats.day.is_none() {
+        day_format = "day-".to_owned();
+    } else {
+        day_format = config.formats.day.unwrap();
+    }
+    if config.formats.year.is_none() {
+        year_format = "advent-of-code-".to_owned();
+    } else {
+        year_format = config.formats.year.unwrap();
+    }
+
+    // Environment
     let environment: Environment;
-    match Environment::new(day_format, year_format) {
+    match Environment::new(&day_format, &year_format) {
         Ok(env) => environment = env,
         Err(e) => {
             eprintln!("Invalid environment: {:?}", e);
@@ -100,25 +164,32 @@ fn main() {
         }
     }
 
+    // Commands
     let args = Args::parse();
     match args.action {
         Action::Input => {
-            helpers::check_day_and_year_dirs(day_format, year_format);
+            helpers::check_day_and_year_dirs(&day_format, &year_format);
             let input = get_input(environment.year, environment.day.unwrap());
-            println!("Input");
-            std::fs::write("input.txt", input).expect("Unable to write file");
-        },
-        Action::Submit{input} => {
-            helpers::check_day_and_year_dirs(day_format, year_format);
+            let result = std::fs::write("input.txt", input);
+            if result.is_ok() {
+                let msg = "Success".green();
+                println!("{}", msg);
+            } else {
+                let msg = format!("Failed to write input file: {:?}", result).red();
+                println!("{}", msg);
+            }
+        }
+        Action::Submit { input } => {
+            helpers::check_day_and_year_dirs(&day_format, &year_format);
             println!("Submit: {}", input);
-        },
+        }
         Action::Day => {
             println!("Day");
-        },
+        }
         Action::Part => {
-            helpers::check_day_and_year_dirs(day_format, year_format);
+            helpers::check_day_and_year_dirs(&day_format, &year_format);
             println!("Part")
-    },
+        }
     }
 }
 
@@ -150,13 +221,13 @@ pub mod helpers {
 }
 
 fn get_input(year: u16, day: u8) -> String {
-    use std::env;
     use dotenv::dotenv;
+    use std::env;
 
     let url = format!("https://adventofcode.com/{}/day/{}/input", year, day);
 
     let cwd = std::env::current_dir().unwrap();
-    env::set_current_dir("../.." ).unwrap();
+    env::set_current_dir("../..").unwrap();
     dotenv().ok();
     env::set_current_dir(cwd).unwrap();
 
@@ -166,10 +237,11 @@ fn get_input(year: u16, day: u8) -> String {
         Err(e) => {
             eprintln!("session key not set in .env file: {}", e);
             std::process::exit(1);
-        },
+        }
     }
     let client = reqwest::blocking::Client::new();
-    let response = client.get(&url)
+    let response = client
+        .get(&url)
         .header("Cookie", format!("session={}", session_cookie))
         .header("User-Agent", "AceofSpades5757")
         .send()
