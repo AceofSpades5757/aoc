@@ -1,3 +1,6 @@
+use std::io;
+use std::io::BufRead;
+use std::path::Path;
 use clap::Parser;
 use clap::Subcommand;
 use colored::*;
@@ -18,7 +21,7 @@ enum Action {
     /// Submit answer, based on the current working directory's day.
     Submit {
         #[clap(short, long)]
-        input: String,
+        input: Option<String>,
     },
     /// Create a new day, based on previous days, up to 25.
     Day,
@@ -192,7 +195,59 @@ fn main() {
         Action::Submit { input } => {
             // Check CWD
             helpers::check_day_and_year_dirs(&day_format, &year_format);
-            println!("Submit: {}", input);
+
+            let day = environment.day.unwrap();
+            let year = environment.year;
+            let part_number: u8;
+
+            let part_2_path = Path::new("src/bin/part_2.rs");
+            if part_2_path.exists() {
+                part_number = 2;
+            } else {
+                part_number = 1;
+            }
+
+            let mut command = std::process::Command::new("cargo");
+            command.arg("run").arg("--bin").arg(format!("part_{}", part_number));
+            let output = command.output().unwrap();
+            let answer = String::from_utf8(output.stdout).unwrap().trim().to_owned();
+            let results = submit_answer(year, day, part_number, &answer);
+            println!("{:?}", results);
+            if results.is_ok() {
+                println!("{}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!("Answer was incorrect: {:?}", results).red()
+                );
+            }
+
+            /*
+            // Read from --input flag
+            if !input.is_none() {
+                todo!();
+                //let result = submit_answer(&input.unwrap(), year, day, part_number);
+                let result: Result<(), String> = Ok(());
+
+                if result.is_ok() {
+                    println!("{}", "Success".green());
+                } else {
+                    println!(
+                        "{}",
+                        format!("Failed to write input file: {:?}", result).red()
+                    );
+                }
+
+                return;
+            }
+
+            // Read from stdin
+            let mut input = String::new();
+            for line in io::stdin().lock().lines() {
+                input.push_str(&line.unwrap());
+            }
+            dbg!(input);
+            */
         }
         Action::Day => {
             // Check CWD
@@ -385,6 +440,43 @@ fn get_input(year: u16, day: u8) -> String {
 
     let text = response.text().unwrap();
     text
+}
+
+fn submit_answer(year: u16, day: u8, part: u8, answer: &str) -> Result<String, String> {
+    use dotenv::dotenv;
+    use std::env;
+
+    let url = format!("https://adventofcode.com/{}/day/{}/answer", year, day);
+
+    let cwd = std::env::current_dir().unwrap();
+    env::set_current_dir("../..").unwrap();
+    dotenv().ok();
+    env::set_current_dir(cwd).unwrap();
+
+    let session_cookie: String;
+    match env::var("session") {
+        Ok(val) => session_cookie = val,
+        Err(e) => {
+            eprintln!("{}", format!("session key not set in .env file: {}", e).red());
+            std::process::exit(1);
+        }
+    }
+    let client = reqwest::blocking::Client::new();
+    let mut response = client
+        .post(&url)
+        .header("Cookie", format!("session={}", session_cookie))
+        .header("User-Agent", "AceofSpades5757")
+        .form(&[("level", part)])
+        .form(&[("answer", answer)])
+        .send()
+        .unwrap();
+
+    let text = response.text().unwrap();
+    if text.contains("That's the right answer!") {
+        Ok(text)
+    } else {
+        Err(text)
+    }
 }
 
 #[cfg(test)]
