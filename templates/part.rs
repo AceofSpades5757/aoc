@@ -5,9 +5,7 @@ fn solve(input: &str) -> i32 {
 }
 
 fn main() {
-    let input = std::fs::read_to_string("./input.txt").expect(
-        "Input file exists and is readable in the root member's directory: day-XX/input.txt",
-    );
+    let input = include_str!("../../input.txt");
     let answer = solve(&input);
     println!("{}", answer);
 }
