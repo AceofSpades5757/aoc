@@ -240,12 +240,32 @@ fn get_input(year: u16, day: u8) -> String {
         }
     }
     let client = reqwest::blocking::Client::new();
-    let response = client
+    let mut response = client
         .get(&url)
         .header("Cookie", format!("session={}", session_cookie))
         .header("User-Agent", "AceofSpades5757")
         .send()
         .unwrap();
+
+    // if code is 404, try up to 5 times
+    let max_tries = 5;
+    let mut tries = 0;
+    while response.status() == 404 && tries < max_tries {
+        eprintln!("{}", "Puzzle has not yet opened, retrying...".yellow());
+        response = client
+            .get(&url)
+            .header("Cookie", format!("session={}", session_cookie))
+            .header("User-Agent", "AceofSpades5757")
+            .send()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1_000));
+        tries += 1;
+    }
+    if response.status() == 404 {
+        eprintln!("{}", "Puzzle has not yet opened, please try again later.".red());
+        std::process::exit(1);
+    }
+
     let text = response.text().unwrap();
     text
 }
