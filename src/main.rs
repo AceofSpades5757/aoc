@@ -1,6 +1,6 @@
-use colored::*;
 use clap::Parser;
 use clap::Subcommand;
+use colored::*;
 use serde::{Deserialize, Serialize};
 
 /// Advent of Code command line tool to facilitate solving puzzles.
@@ -174,7 +174,10 @@ fn main() {
             if result.is_ok() {
                 println!("{}", "Success".green());
             } else {
-                println!("{}", format!("Failed to write input file: {:?}", result).red());
+                println!(
+                    "{}",
+                    format!("Failed to write input file: {:?}", result).red()
+                );
             }
         }
         Action::Submit { input } => {
@@ -182,11 +185,32 @@ fn main() {
             println!("Submit: {}", input);
         }
         Action::Day => {
+            //
             println!("Day");
         }
         Action::Part => {
             helpers::check_day_and_year_dirs(&day_format, &year_format);
-            println!("Part")
+            // Run: `cp src/part-1.rs src/part-2.rs`
+            let child = std::process::Command::new("cp")
+                .arg(format!("src/part-1.rs"))
+                .arg(format!("src/part-2.rs"))
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("Run cp command");
+            let output = child.wait_with_output().expect("cp command finished");
+            if output.status.success() {
+                println!("{}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!(
+                        "Failed to copy part 1 to part 2: {:?}",
+                        String::from_utf8(output.stderr.as_slice().to_vec())
+                    )
+                    .red()
+                );
+            }
         }
     }
 }
@@ -260,7 +284,10 @@ fn get_input(year: u16, day: u8) -> String {
         tries += 1;
     }
     if response.status() == 404 {
-        eprintln!("{}", "Puzzle has not yet opened, please try again later.".red());
+        eprintln!(
+            "{}",
+            "Puzzle has not yet opened, please try again later.".red()
+        );
         std::process::exit(1);
     }
 
