@@ -270,13 +270,38 @@ fn main() {
             // Create new day directory
             let result = std::fs::create_dir(&new_day_str);
             if result.is_ok() {
-                println!("New Project Directory: {}", "Success".green());
+                println!("New Day Directory: {}", "Success".green());
             } else {
                 println!(
                     "{}",
                     format!("Failed to create new day directory: {:?}", result).red()
                 );
             }
+            // update workspace Cargo.toml
+            use toml_edit::{Document, value};
+
+            let mut cargo_toml = if let Ok(cargo_toml) = std::fs::read_to_string("Cargo.toml") {
+                std::fs::read_to_string("Cargo.toml").unwrap().parse::<Document>().unwrap()
+            } else {
+                println!("{}", "Creating new Cargo.toml".yellow());
+                // Create new Cargo.toml with [workspace] and members
+                let mut cargo_toml = Document::new();
+                cargo_toml["workspace"] = "{}".parse().unwrap();
+                cargo_toml["workspace"]["members"] = "[]".parse().unwrap();
+                cargo_toml
+            };
+            let workspace_members = cargo_toml["workspace"]["members"].as_array_mut().unwrap();
+            workspace_members.push(new_day_str.clone());
+            let result = std::fs::write("Cargo.toml", cargo_toml.to_string());
+            if result.is_ok() {
+                println!("Update Cargo.toml: {}", "Success".green());
+            } else {
+                println!(
+                    "{}",
+                    format!("Failed to update Cargo.toml: {:?}", result).red()
+                );
+            }
+
             // copy template from ./templates/Cargo.toml
             let template_cargo_toml = include_str!("../templates/Cargo.toml");
             let template_cargo_toml = template_cargo_toml.replace(r#"name = """#, &format!(r#"name = "{}""#, &new_day_str));
