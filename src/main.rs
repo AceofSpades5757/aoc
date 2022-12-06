@@ -1,10 +1,10 @@
-use std::io;
-use std::io::BufRead;
+use std::str::FromStr;
 use std::path::Path;
 use clap::Parser;
 use clap::Subcommand;
 use colored::*;
 use serde::{Deserialize, Serialize};
+use toml_edit::Document;
 
 /// Advent of Code command line tool to facilitate solving puzzles.
 #[derive(Parser)]
@@ -13,6 +13,34 @@ struct Args {
     #[command(subcommand)]
     action: Action,
 }
+
+#[derive(Debug)]
+enum Answer {
+    Correct,
+    Incorrect,
+    AlreadySubmitted,
+    /// Too soon to submit
+    RateLimited,
+}
+
+impl FromStr for Answer {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.contains("That's the right answer!") {
+            Ok(Answer::Correct)
+        } else if s.contains("That's not the right answer") {
+            Ok(Answer::Incorrect)
+        } else if s.contains("You don't seem to be solving") {
+            Ok(Answer::AlreadySubmitted)
+        } else if s.contains("You gave an answer too recently") {
+            Ok(Answer::RateLimited)
+        } else {
+            Err(format!("Unknown response: {}", s))
+        }
+    }
+}
+
 
 #[derive(Subcommand)]
 enum Action {
@@ -192,7 +220,7 @@ fn main() {
                 );
             }
         }
-        Action::Submit { input } => {
+        Action::Submit { input: _input } => {
             // Check CWD
             helpers::check_day_and_year_dirs(&day_format, &year_format);
 
@@ -211,15 +239,13 @@ fn main() {
             command.arg("run").arg("--bin").arg(format!("part_{}", part_number));
             let output = command.output().unwrap();
             let answer = String::from_utf8(output.stdout).unwrap().trim().to_owned();
-            let results = submit_answer(year, day, part_number, &answer);
-            println!("{:?}", results);
-            if results.is_ok() {
-                println!("{}", "Success".green());
-            } else {
-                println!(
-                    "{}",
-                    format!("Answer was incorrect: {:?}", results).red()
-                );
+            let result = submit_answer(year, day, part_number, &answer);
+            println!("{:?}", result);
+            match result {
+                Answer::Correct => println!("{}", "Correct".green()),
+                Answer::Incorrect => println!("{}", "Incorrect".red()),
+                Answer::AlreadySubmitted => println!("{}", "Already Submitted".yellow()),
+                Answer::RateLimited => println!("{}", "Rate Limited".red()),
             }
 
             /*
@@ -277,10 +303,9 @@ fn main() {
                     format!("Failed to create new day directory: {:?}", result).red()
                 );
             }
-            // update workspace Cargo.toml
-            use toml_edit::{Document, value};
 
-            let mut cargo_toml = if let Ok(cargo_toml) = std::fs::read_to_string("Cargo.toml") {
+            // update workspace Cargo.toml
+            let mut cargo_toml = if let Ok(_cargo_toml) = std::fs::read_to_string("Cargo.toml") {
                 std::fs::read_to_string("Cargo.toml").unwrap().parse::<Document>().unwrap()
             } else {
                 println!("{}", "Creating new Cargo.toml".yellow());
@@ -420,10 +445,7 @@ fn get_input(year: u16, day: u8) -> String {
 
     let url = format!("https://adventofcode.com/{}/day/{}/input", year, day);
 
-    let cwd = std::env::current_dir().unwrap();
-    env::set_current_dir("../..").unwrap();
     dotenv().ok();
-    env::set_current_dir(cwd).unwrap();
 
     let session_cookie: String;
     match env::var("session") {
@@ -436,7 +458,7 @@ fn get_input(year: u16, day: u8) -> String {
     let client = reqwest::blocking::Client::new();
     let mut response = client
         .get(&url)
-        .header("Cookie", format!("session={}", session_cookie))
+        .header("Cookie", &session_cookie)
         .header("User-Agent", "AceofSpades5757")
         .send()
         .unwrap();
@@ -448,7 +470,7 @@ fn get_input(year: u16, day: u8) -> String {
         eprintln!("{}", "Puzzle has not yet opened, retrying...".yellow());
         response = client
             .get(&url)
-            .header("Cookie", format!("session={}", session_cookie))
+            .header("Cookie", format!("session={}", &session_cookie))
             .header("User-Agent", "AceofSpades5757")
             .send()
             .unwrap();
@@ -467,16 +489,15 @@ fn get_input(year: u16, day: u8) -> String {
     text
 }
 
-fn submit_answer(year: u16, day: u8, part: u8, answer: &str) -> Result<String, String> {
+//fn submit_answer(year: u16, day: u8, part: u8, answer: &str) -> Result<String, String> {
+//fn submit_answer(year: u16, day: u8, part: u8, answer: &str) -> Result<Answer, Answer> {
+fn submit_answer(year: u16, day: u8, part: u8, answer: &str) -> Answer {
     use dotenv::dotenv;
     use std::env;
 
     let url = format!("https://adventofcode.com/{}/day/{}/answer", year, day);
 
-    let cwd = std::env::current_dir().unwrap();
-    env::set_current_dir("../..").unwrap();
     dotenv().ok();
-    env::set_current_dir(cwd).unwrap();
 
     let session_cookie: String;
     match env::var("session") {
@@ -487,7 +508,7 @@ fn submit_answer(year: u16, day: u8, part: u8, answer: &str) -> Result<String, S
         }
     }
     let client = reqwest::blocking::Client::new();
-    let mut response = client
+    let response = client
         .post(&url)
         .header("Cookie", format!("session={}", session_cookie))
         .header("User-Agent", "AceofSpades5757")
@@ -497,11 +518,22 @@ fn submit_answer(year: u16, day: u8, part: u8, answer: &str) -> Result<String, S
         .unwrap();
 
     let text = response.text().unwrap();
-    if text.contains("That's the right answer!") {
-        Ok(text)
-    } else {
-        Err(text)
-    }
+    let answer: Answer = text.parse().unwrap();
+    answer
+    //match answer {
+        //Answer::Correct => {
+            //Ok(answer)
+        //}
+        //Answer::Incorrect => {
+            //Err(answer)
+        //}
+        //Answer::AlreadySubmitted => {
+            //Err(answer)
+        //}
+        //Answer::RateLimited => {
+            //Err(answer)
+        //}
+    //}
 }
 
 #[cfg(test)]
